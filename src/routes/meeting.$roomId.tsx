@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -10,8 +10,10 @@ import {
   FileText,
   Loader2,
   Video,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { summarizeMeeting } from "@/lib/ai.functions";
 
@@ -19,7 +21,12 @@ export const Route = createFileRoute("/meeting/$roomId")({
   head: ({ params }) => ({
     meta: [
       { title: `${params.roomId} — Henosis Meet` },
-      { name: "description", content: "Live video meeting with AI note-taking." },
+      { name: "description", content: "Join the Henosis Meet video call — no sign-up required." },
+      { property: "og:title", content: `Join "${params.roomId}" on Henosis Meet` },
+      {
+        property: "og:description",
+        content: "Tap the link to join this Henosis NGO video meeting. No account needed.",
+      },
     ],
   }),
   component: MeetingRoom,
@@ -48,10 +55,52 @@ interface SpeechRecognitionEvent extends Event {
   };
 }
 
+// --- Jitsi External API typing ---
+type JitsiAPI = {
+  dispose: () => void;
+  addListener: (event: string, cb: (...args: unknown[]) => void) => void;
+  executeCommand: (cmd: string, ...args: unknown[]) => void;
+};
+type JitsiConstructor = new (
+  domain: string,
+  options: Record<string, unknown>,
+) => JitsiAPI;
+
+function loadJitsiScript(): Promise<JitsiConstructor> {
+  return new Promise((resolve, reject) => {
+    const w = window as unknown as { JitsiMeetExternalAPI?: JitsiConstructor };
+    if (w.JitsiMeetExternalAPI) return resolve(w.JitsiMeetExternalAPI);
+    const existing = document.getElementById("jitsi-external-api") as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => {
+        const ww = window as unknown as { JitsiMeetExternalAPI?: JitsiConstructor };
+        ww.JitsiMeetExternalAPI ? resolve(ww.JitsiMeetExternalAPI) : reject(new Error("Jitsi failed to load"));
+      });
+      return;
+    }
+    const s = document.createElement("script");
+    s.id = "jitsi-external-api";
+    s.src = "https://meet.jit.si/external_api.js";
+    s.async = true;
+    s.onload = () => {
+      const ww = window as unknown as { JitsiMeetExternalAPI?: JitsiConstructor };
+      ww.JitsiMeetExternalAPI ? resolve(ww.JitsiMeetExternalAPI) : reject(new Error("Jitsi failed to load"));
+    };
+    s.onerror = () => reject(new Error("Could not load Jitsi script"));
+    document.body.appendChild(s);
+  });
+}
+
 function MeetingRoom() {
   const { roomId } = Route.useParams();
   const navigate = useNavigate();
   const jitsiContainer = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<JitsiAPI | null>(null);
+
+  const [displayName, setDisplayName] = useState("");
+  const [joined, setJoined] = useState(false);
+  const [loadingCall, setLoadingCall] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [listening, setListening] = useState(false);
   const [supported, setSupported] = useState(true);
@@ -63,22 +112,13 @@ function MeetingRoom() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const summarize = useServerFn(summarizeMeeting);
 
-  // Embed Jitsi
+  // Restore stored name
   useEffect(() => {
-    if (!jitsiContainer.current) return;
-    const iframe = document.createElement("iframe");
-    iframe.src = `https://meet.jit.si/${encodeURIComponent(roomId)}#config.prejoinPageEnabled=true&userInfo.displayName=%22Henosis%22`;
-    iframe.allow =
-      "camera; microphone; fullscreen; display-capture; autoplay; clipboard-write";
-    iframe.style.width = "100%";
-    iframe.style.height = "100%";
-    iframe.style.border = "0";
-    iframe.style.borderRadius = "16px";
-    jitsiContainer.current.innerHTML = "";
-    jitsiContainer.current.appendChild(iframe);
-  }, [roomId]);
+    const stored = localStorage.getItem("henosis_display_name");
+    if (stored) setDisplayName(stored);
+  }, []);
 
-  // Set up speech recognition
+  // Speech recognition
   useEffect(() => {
     const w = window as unknown as {
       SpeechRecognition?: SRConstructor;
@@ -106,11 +146,8 @@ function MeetingRoom() {
       if (finalChunk) setTranscript((prev) => prev + finalChunk);
       setInterim(interimChunk);
     };
-    rec.onerror = (e) => {
-      console.error("Speech recognition error", e);
-    };
+    rec.onerror = (e) => console.error("Speech recognition error", e);
     rec.onend = () => {
-      // auto-restart while user wants to listen
       if (recognitionRef.current && listeningRef.current) {
         try {
           rec.start();
@@ -134,6 +171,67 @@ function MeetingRoom() {
   useEffect(() => {
     listeningRef.current = listening;
   }, [listening]);
+
+  // Mount Jitsi after user joins
+  useEffect(() => {
+    if (!joined || !jitsiContainer.current) return;
+    let disposed = false;
+    setLoadingCall(true);
+    setLoadError(null);
+
+    loadJitsiScript()
+      .then((JitsiMeetExternalAPI) => {
+        if (disposed || !jitsiContainer.current) return;
+        const api = new JitsiMeetExternalAPI("meet.jit.si", {
+          roomName: roomId,
+          parentNode: jitsiContainer.current,
+          width: "100%",
+          height: "100%",
+          userInfo: { displayName: displayName || "Guest" },
+          configOverwrite: {
+            prejoinPageEnabled: false,
+            disableDeepLinking: true,
+            startWithAudioMuted: false,
+            startWithVideoMuted: false,
+          },
+          interfaceConfigOverwrite: {
+            MOBILE_APP_PROMO: false,
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_BRAND_WATERMARK: false,
+            DEFAULT_BACKGROUND: "#1a0b2e",
+          },
+        });
+        apiRef.current = api;
+        api.addListener("videoConferenceJoined", () => setLoadingCall(false));
+        api.addListener("readyToClose", () => navigate({ to: "/" }));
+      })
+      .catch((err: Error) => {
+        console.error(err);
+        setLoadError(err.message || "Could not load video call");
+        setLoadingCall(false);
+      });
+
+    return () => {
+      disposed = true;
+      try {
+        apiRef.current?.dispose();
+      } catch {
+        /* ignore */
+      }
+      apiRef.current = null;
+    };
+  }, [joined, roomId, displayName, navigate]);
+
+  const enterMeeting = () => {
+    const name = displayName.trim();
+    if (!name) {
+      toast.error("Please enter your name");
+      return;
+    }
+    localStorage.setItem("henosis_display_name", name);
+    setDisplayName(name);
+    setJoined(true);
+  };
 
   const toggleListen = () => {
     const rec = recognitionRef.current;
@@ -167,9 +265,8 @@ function MeetingRoom() {
       const res = await summarize({
         data: { transcript: transcript.trim(), meetingTitle: roomId },
       });
-      if (res.error) {
-        toast.error(res.error);
-      } else {
+      if (res.error) toast.error(res.error);
+      else {
         setNotes(res.notes);
         toast.success("Meeting notes ready");
       }
@@ -183,7 +280,7 @@ function MeetingRoom() {
 
   const copyLink = async () => {
     await navigator.clipboard.writeText(window.location.href);
-    toast.success("Meeting link copied");
+    toast.success("Meeting link copied — share it with anyone");
   };
 
   const copyNotes = async () => {
@@ -192,9 +289,73 @@ function MeetingRoom() {
     toast.success("Notes copied to clipboard");
   };
 
+  // ---- Pre-join screen ----
+  if (!joined) {
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center px-4 py-10"
+        style={{ background: "var(--gradient-soft)" }}
+      >
+        <div className="w-full max-w-md rounded-3xl border border-border bg-card p-8 shadow-[var(--shadow-elevated)]">
+          <div
+            className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl text-primary-foreground"
+            style={{ background: "var(--gradient-hero)" }}
+          >
+            <Video className="h-6 w-6" />
+          </div>
+          <h1 className="text-center font-display text-2xl font-bold tracking-tight">
+            Join the meeting
+          </h1>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
+            Room <span className="font-medium text-foreground">{roomId}</span>
+          </p>
+
+          <div className="mt-6 space-y-3">
+            <label className="text-sm font-medium">Your name</label>
+            <Input
+              autoFocus
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="e.g. Amina from Henosis"
+              className="h-12"
+              onKeyDown={(e) => e.key === "Enter" && enterMeeting()}
+            />
+            <Button
+              className="h-12 w-full gap-2 text-base font-semibold"
+              style={{ background: "var(--gradient-hero)" }}
+              onClick={enterMeeting}
+            >
+              <Video className="h-5 w-5" />
+              Join meeting
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 w-full gap-2"
+              onClick={copyLink}
+            >
+              <Copy className="h-4 w-4" /> Copy invite link
+            </Button>
+          </div>
+
+          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+            <Users className="h-3.5 w-3.5" />
+            No sign-up needed. Anyone with the link can join.
+          </div>
+
+          <button
+            onClick={() => navigate({ to: "/" })}
+            className="mt-6 block w-full text-center text-xs text-muted-foreground hover:text-foreground"
+          >
+            ← Back to home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- In-meeting screen ----
   return (
     <div className="flex h-screen flex-col bg-background">
-      {/* Top bar */}
       <header className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
         <div className="flex items-center gap-3">
           <Button
@@ -223,17 +384,37 @@ function MeetingRoom() {
         </div>
       </header>
 
-      {/* Main grid */}
       <div className="grid flex-1 grid-cols-1 gap-3 overflow-hidden p-3 lg:grid-cols-[1fr_380px]">
         {/* Jitsi */}
-        <div
-          ref={jitsiContainer}
-          className="overflow-hidden rounded-2xl bg-black shadow-[var(--shadow-elevated)]"
-        />
+        <div className="relative overflow-hidden rounded-2xl bg-black shadow-[var(--shadow-elevated)]">
+          <div ref={jitsiContainer} className="h-full w-full" />
+          {loadingCall && !loadError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/80 text-white">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-accent" />
+                <p className="text-sm">Connecting to the call…</p>
+              </div>
+            </div>
+          )}
+          {loadError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/85 px-6 text-center text-white">
+              <div className="max-w-sm">
+                <p className="font-semibold">Couldn't load the video call</p>
+                <p className="mt-2 text-sm text-white/70">{loadError}</p>
+                <Button
+                  className="mt-4"
+                  variant="outline"
+                  onClick={() => window.location.reload()}
+                >
+                  Try again
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Sidebar */}
         <aside className="flex min-h-0 flex-col gap-3">
-          {/* Controls card */}
           <div className="rounded-2xl border border-border bg-card p-4">
             <div className="mb-3 flex items-center justify-between">
               <div>
@@ -256,9 +437,7 @@ function MeetingRoom() {
                 disabled={!supported}
                 variant={listening ? "destructive" : "default"}
                 className="flex-1 gap-2"
-                style={
-                  listening ? undefined : { background: "var(--gradient-hero)" }
-                }
+                style={listening ? undefined : { background: "var(--gradient-hero)" }}
               >
                 {listening ? (
                   <>
@@ -286,7 +465,6 @@ function MeetingRoom() {
             </div>
           </div>
 
-          {/* Transcript / Notes */}
           <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-card">
             <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
               <h3 className="flex items-center gap-2 text-sm font-semibold">
@@ -340,7 +518,6 @@ function MeetingRoom() {
   );
 }
 
-// Tiny markdown renderer (headings, bullets, checkboxes)
 function Notes({ markdown }: { markdown: string }) {
   const lines = markdown.split("\n");
   return (
@@ -382,6 +559,3 @@ function Notes({ markdown }: { markdown: string }) {
     </div>
   );
 }
-
-// silence unused import warning when Link tree-shaken
-void Link;
