@@ -190,9 +190,11 @@ function MeetingRoom() {
           userInfo: { displayName: displayName || "Guest" },
           configOverwrite: {
             prejoinPageEnabled: false,
+            prejoinConfig: { enabled: false },
             disableDeepLinking: true,
             startWithAudioMuted: false,
             startWithVideoMuted: false,
+            disableInviteFunctions: false,
           },
           interfaceConfigOverwrite: {
             MOBILE_APP_PROMO: false,
@@ -202,6 +204,8 @@ function MeetingRoom() {
           },
         });
         apiRef.current = api;
+        // Iframe is mounted — clear our overlay so Jitsi's UI is interactive.
+        setLoadingCall(false);
         api.addListener("videoConferenceJoined", () => setLoadingCall(false));
         api.addListener("readyToClose", () => navigate({ to: "/" }));
       })
