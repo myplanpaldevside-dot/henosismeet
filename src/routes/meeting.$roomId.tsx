@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { summarizeMeeting } from "@/lib/ai.functions";
+import { getJaasToken } from "@/lib/jaas";
 
 export const Route = createFileRoute("/meeting/$roomId")({
   head: ({ params }) => ({
@@ -102,6 +103,10 @@ function MeetingRoom() {
   const [loadingCall, setLoadingCall] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [joiningCall, setJoiningCall] = useState(false);
+  const [jaasToken, setJaasToken] = useState<string | null>(null);
+  const [jaasRoomName, setJaasRoomName] = useState("");
+
   const [listening, setListening] = useState(false);
   const [supported, setSupported] = useState(true);
   const [transcript, setTranscript] = useState("");
@@ -111,6 +116,7 @@ function MeetingRoom() {
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const summarize = useServerFn(summarizeMeeting);
+  const getToken = useServerFn(getJaasToken);
 
   // Restore stored name
   useEffect(() => {
@@ -172,9 +178,9 @@ function MeetingRoom() {
     listeningRef.current = listening;
   }, [listening]);
 
-  // Mount Jitsi after user joins
+  // Mount Jitsi after user joins (requires JaaS token)
   useEffect(() => {
-    if (!joined || !jitsiContainer.current) return;
+    if (!joined || !jitsiContainer.current || !jaasToken) return;
     let disposed = false;
     setLoadingCall(true);
     setLoadError(null);
@@ -182,8 +188,9 @@ function MeetingRoom() {
     loadJitsiScript()
       .then((JitsiMeetExternalAPI) => {
         if (disposed || !jitsiContainer.current) return;
-        const api = new JitsiMeetExternalAPI("meet.jit.si", {
-          roomName: roomId,
+        const api = new JitsiMeetExternalAPI("8x8.vc", {
+          roomName: jaasRoomName,
+          jwt: jaasToken,
           parentNode: jitsiContainer.current,
           width: "100%",
           height: "100%",
@@ -195,12 +202,6 @@ function MeetingRoom() {
             startWithAudioMuted: false,
             startWithVideoMuted: false,
             disableInviteFunctions: false,
-            // Disable lobby so unauthenticated users can join directly without
-            // waiting for a moderator (meet.jit.si enforces a lobby by default
-            // when no JWT moderator is present, which blocks all participants).
-            lobby: { enabled: false, autoKnock: false },
-            enableLobbyChat: false,
-            requireDisplayName: false,
           },
           interfaceConfigOverwrite: {
             MOBILE_APP_PROMO: false,
@@ -210,16 +211,9 @@ function MeetingRoom() {
           },
         });
         apiRef.current = api;
-        // Iframe is mounted — clear our overlay so Jitsi's UI is interactive.
         setLoadingCall(false);
         api.addListener("videoConferenceJoined", () => setLoadingCall(false));
         api.addListener("readyToClose", () => navigate({ to: "/" }));
-        // Auto-admit any participant stuck in the lobby (fallback in case the
-        // server-side lobby is still active despite the config override above).
-        api.addListener("knockingParticipant", (...args: unknown[]) => {
-          const e = args[0] as { participant: { id: string } };
-          api.executeCommand("answerKnockingParticipant", e.participant.id, true);
-        });
       })
       .catch((err: Error) => {
         console.error(err);
@@ -236,9 +230,9 @@ function MeetingRoom() {
       }
       apiRef.current = null;
     };
-  }, [joined, roomId, displayName, navigate]);
+  }, [joined, jaasToken, jaasRoomName, displayName, navigate]);
 
-  const enterMeeting = () => {
+  const enterMeeting = async () => {
     const name = displayName.trim();
     if (!name) {
       toast.error("Please enter your name");
@@ -246,7 +240,21 @@ function MeetingRoom() {
     }
     localStorage.setItem("henosis_display_name", name);
     setDisplayName(name);
-    setJoined(true);
+    setJoiningCall(true);
+    try {
+      const res = await getToken({ data: { displayName: name, roomId } });
+      if (res.error || !res.token) {
+        toast.error(res.error ?? "Could not connect to meeting service");
+        return;
+      }
+      setJaasToken(res.token);
+      setJaasRoomName(res.roomName);
+      setJoined(true);
+    } catch {
+      toast.error("Could not connect to meeting service");
+    } finally {
+      setJoiningCall(false);
+    }
   };
 
   const toggleListen = () => {
@@ -348,9 +356,13 @@ function MeetingRoom() {
               className="h-12 w-full gap-2 text-base font-semibold"
               style={{ background: "var(--gradient-hero)" }}
               onClick={enterMeeting}
+              disabled={joiningCall}
             >
-              <Video className="h-5 w-5" />
-              Join meeting
+              {joiningCall ? (
+                <><Loader2 className="h-5 w-5 animate-spin" /> Connecting…</>
+              ) : (
+                <><Video className="h-5 w-5" /> Join meeting</>
+              )}
             </Button>
             <Button
               variant="outline"
