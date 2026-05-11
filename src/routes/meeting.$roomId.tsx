@@ -190,9 +190,11 @@ function MeetingRoom() {
           userInfo: { displayName: displayName || "Guest" },
           configOverwrite: {
             prejoinPageEnabled: false,
+            prejoinConfig: { enabled: false },
             disableDeepLinking: true,
             startWithAudioMuted: false,
             startWithVideoMuted: false,
+            disableInviteFunctions: false,
           },
           interfaceConfigOverwrite: {
             MOBILE_APP_PROMO: false,
