@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { summarizeMeeting } from "@/lib/ai.functions";
 import { getJaasToken } from "@/lib/jaas";
 import { supabase } from "@/integrations/supabase/client";
+import React from "react";
 
 export const Route = createFileRoute("/meeting/$roomId")({
   head: ({ params }) => ({
@@ -50,10 +51,7 @@ interface SpeechRecognitionEvent extends Event {
   resultIndex: number;
   results: {
     length: number;
-    [i: number]: {
-      isFinal: boolean;
-      [j: number]: { transcript: string };
-    };
+    [i: number]: { isFinal: boolean; [j: number]: { transcript: string } };
   };
 }
 
@@ -63,10 +61,7 @@ type JitsiAPI = {
   addListener: (event: string, cb: (...args: unknown[]) => void) => void;
   executeCommand: (cmd: string, ...args: unknown[]) => void;
 };
-type JitsiConstructor = new (
-  domain: string,
-  options: Record<string, unknown>,
-) => JitsiAPI;
+type JitsiConstructor = new (domain: string, options: Record<string, unknown>) => JitsiAPI;
 
 function loadJitsiScript(): Promise<JitsiConstructor> {
   return new Promise((resolve, reject) => {
@@ -76,17 +71,21 @@ function loadJitsiScript(): Promise<JitsiConstructor> {
     if (existing) {
       existing.addEventListener("load", () => {
         const ww = window as unknown as { JitsiMeetExternalAPI?: JitsiConstructor };
-        ww.JitsiMeetExternalAPI ? resolve(ww.JitsiMeetExternalAPI) : reject(new Error("Jitsi failed to load"));
+        ww.JitsiMeetExternalAPI
+          ? resolve(ww.JitsiMeetExternalAPI)
+          : reject(new Error("Jitsi failed to load"));
       });
       return;
     }
     const s = document.createElement("script");
     s.id = "jitsi-external-api";
-    s.src = "https://meet.jit.si/external_api.js";
+    s.src = "https://8x8.vc/libs/external_api.min.js";
     s.async = true;
     s.onload = () => {
       const ww = window as unknown as { JitsiMeetExternalAPI?: JitsiConstructor };
-      ww.JitsiMeetExternalAPI ? resolve(ww.JitsiMeetExternalAPI) : reject(new Error("Jitsi failed to load"));
+      ww.JitsiMeetExternalAPI
+        ? resolve(ww.JitsiMeetExternalAPI)
+        : reject(new Error("Jitsi failed to load"));
     };
     s.onerror = () => reject(new Error("Could not load Jitsi script"));
     document.body.appendChild(s);
@@ -99,25 +98,37 @@ function MeetingRoom() {
   const jitsiContainer = useRef<HTMLDivElement>(null);
   const apiRef = useRef<JitsiAPI | null>(null);
 
+  // Is this user the meeting creator? Checked once on mount.
+  const isModerator = useRef(!!localStorage.getItem(`henosis_creator_${roomId}`)).current;
+
   const [displayName, setDisplayName] = useState("");
   const [joined, setJoined] = useState(false);
   const [loadingCall, setLoadingCall] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-
   const [joiningCall, setJoiningCall] = useState(false);
   const [jaasToken, setJaasToken] = useState<string | null>(null);
   const [jaasRoomName, setJaasRoomName] = useState("");
 
-  const [listening, setListening] = useState(false);
+  // Transcription state
   const [supported, setSupported] = useState(true);
-  const [transcript, setTranscript] = useState("");
-  const [interim, setInterim] = useState("");
+  const [globalListening, setGlobalListening] = useState(false);
+  const [transcript, setTranscript] = useState(""); // moderator only: combined final transcript
+  const [interimMap, setInterimMap] = useState<Record<string, string>>({}); // speaker → interim
+
   const [notes, setNotes] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const transcriptChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const globalListeningRef = useRef(false);
+  const displayNameRef = useRef(displayName);
+
   const summarize = useServerFn(summarizeMeeting);
   const getToken = useServerFn(getJaasToken);
+
+  // Keep refs in sync
+  useEffect(() => { globalListeningRef.current = globalListening; }, [globalListening]);
+  useEffect(() => { displayNameRef.current = displayName; }, [displayName]);
 
   // Restore stored name
   useEffect(() => {
@@ -125,7 +136,8 @@ function MeetingRoom() {
     if (stored) setDisplayName(stored);
   }, []);
 
-  // Speech recognition
+  // Speech recognition setup — onresult broadcasts to Supabase so ALL speakers
+  // contribute to the moderator's transcript
   useEffect(() => {
     const w = window as unknown as {
       SpeechRecognition?: SRConstructor;
@@ -150,60 +162,110 @@ function MeetingRoom() {
         if (r.isFinal) finalChunk += text + " ";
         else interimChunk += text;
       }
-      if (finalChunk) setTranscript((prev) => prev + finalChunk);
-      setInterim(interimChunk);
+      const ch = transcriptChannelRef.current;
+      const speaker = displayNameRef.current || "Guest";
+      if (finalChunk && ch) {
+        ch.send({
+          type: "broadcast",
+          event: "transcript",
+          payload: { speaker, text: finalChunk, final: true },
+        });
+      }
+      if (ch) {
+        ch.send({
+          type: "broadcast",
+          event: "transcript",
+          payload: { speaker, text: interimChunk, final: false },
+        });
+      }
     };
     rec.onerror = (e) => console.error("Speech recognition error", e);
     rec.onend = () => {
-      if (recognitionRef.current && listeningRef.current) {
-        try {
-          rec.start();
-        } catch {
-          /* ignore */
-        }
+      if (recognitionRef.current && globalListeningRef.current) {
+        try { rec.start(); } catch { /* ignore */ }
       }
     };
     recognitionRef.current = rec;
     return () => {
-      try {
-        rec.stop();
-      } catch {
-        /* ignore */
-      }
+      try { rec.stop(); } catch { /* ignore */ }
       recognitionRef.current = null;
     };
   }, []);
 
-  const listeningRef = useRef(false);
+  // Supabase transcription channel — coordinates start/stop and collects all speakers
   useEffect(() => {
-    listeningRef.current = listening;
-  }, [listening]);
+    if (!joined) return;
+    let ch: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      ch = supabase.channel(`transcription:${roomId}`);
 
-  // Broadcast presence so the landing page can show this meeting as active
+      // All participants: listen for moderator's start/stop commands
+      ch.on("broadcast", { event: "control" }, ({ payload }) => {
+        const action = (payload as { action: string }).action;
+        if (action === "start") {
+          setGlobalListening(true);
+          try { recognitionRef.current?.start(); } catch { /* ignore */ }
+          if (!isModerator) toast.success("Host started recording — your mic is being transcribed");
+        } else {
+          setGlobalListening(false);
+          try { recognitionRef.current?.stop(); } catch { /* ignore */ }
+          if (!isModerator) toast("Recording stopped");
+        }
+      });
+
+      // Moderator only: receive transcript chunks from all participants
+      if (isModerator) {
+        ch.on("broadcast", { event: "transcript" }, ({ payload }) => {
+          const { speaker, text, final } = payload as {
+            speaker: string;
+            text: string;
+            final: boolean;
+          };
+          if (final) {
+            if (text.trim()) setTranscript((prev) => prev + `${speaker}: ${text}\n`);
+            setInterimMap((prev) => {
+              const next = { ...prev };
+              delete next[speaker];
+              return next;
+            });
+          } else {
+            setInterimMap((prev) => ({ ...prev, [speaker]: text }));
+          }
+        });
+      }
+
+      ch.subscribe();
+      transcriptChannelRef.current = ch;
+    } catch {
+      /* Supabase not available */
+    }
+    return () => {
+      try {
+        if (ch) supabase.removeChannel(ch);
+      } catch { /* ignore */ }
+      transcriptChannelRef.current = null;
+    };
+  }, [joined, roomId, isModerator]);
+
+  // Supabase presence — landing page sees this meeting as active
   useEffect(() => {
     if (!joined) return;
     let channel: ReturnType<typeof supabase.channel> | null = null;
     try {
       channel = supabase.channel("active-meetings");
       channel.subscribe(async (status) => {
-        if (status === "SUBSCRIBED") {
-          await channel!.track({ roomId });
-        }
+        if (status === "SUBSCRIBED") await channel!.track({ roomId });
       });
-    } catch {
-      /* Supabase not available — presence is optional */
-    }
+    } catch { /* ignore */ }
     return () => {
       try {
         channel?.untrack();
         if (channel) supabase.removeChannel(channel);
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
     };
   }, [joined, roomId]);
 
-  // Mount Jitsi after user joins (requires JaaS token)
+  // Mount Jitsi after user joins
   useEffect(() => {
     if (!joined || !jitsiContainer.current || !jaasToken) return;
     let disposed = false;
@@ -248,21 +310,14 @@ function MeetingRoom() {
 
     return () => {
       disposed = true;
-      try {
-        apiRef.current?.dispose();
-      } catch {
-        /* ignore */
-      }
+      try { apiRef.current?.dispose(); } catch { /* ignore */ }
       apiRef.current = null;
     };
   }, [joined, jaasToken, jaasRoomName, displayName, navigate]);
 
   const enterMeeting = async () => {
     const name = displayName.trim();
-    if (!name) {
-      toast.error("Please enter your name");
-      return;
-    }
+    if (!name) { toast.error("Please enter your name"); return; }
     localStorage.setItem("henosis_display_name", name);
     setDisplayName(name);
     setJoiningCall(true);
@@ -283,24 +338,19 @@ function MeetingRoom() {
     }
   };
 
-  const toggleListen = () => {
-    const rec = recognitionRef.current;
-    if (!rec) return;
-    if (listening) {
-      setListening(false);
-      try {
-        rec.stop();
-      } catch {
-        /* ignore */
-      }
+  // Moderator only: toggles transcription for the entire room
+  const toggleTranscription = () => {
+    const ch = transcriptChannelRef.current;
+    if (globalListening) {
+      setGlobalListening(false);
+      try { recognitionRef.current?.stop(); } catch { /* ignore */ }
+      ch?.send({ type: "broadcast", event: "control", payload: { action: "stop" } });
     } else {
-      setListening(true);
-      try {
-        rec.start();
-        toast.success("Transcribing your microphone");
-      } catch {
-        /* ignore */
-      }
+      if (!supported) return;
+      setGlobalListening(true);
+      try { recognitionRef.current?.start(); } catch { /* ignore */ }
+      ch?.send({ type: "broadcast", event: "control", payload: { action: "start" } });
+      toast.success("Recording started — all participants are being transcribed");
     }
   };
 
@@ -312,14 +362,9 @@ function MeetingRoom() {
     setGenerating(true);
     setNotes(null);
     try {
-      const res = await summarize({
-        data: { transcript: transcript.trim(), meetingTitle: roomId },
-      });
+      const res = await summarize({ data: { transcript: transcript.trim(), meetingTitle: roomId } });
       if (res.error) toast.error(res.error);
-      else {
-        setNotes(res.notes);
-        toast.success("Meeting notes ready");
-      }
+      else { setNotes(res.notes); toast.success("Meeting notes ready"); }
     } catch (e) {
       console.error(e);
       toast.error("Couldn't generate notes.");
@@ -329,16 +374,11 @@ function MeetingRoom() {
   };
 
   const copyLink = async () => {
-    // Always share the public published URL, never the editor preview URL
-    // (preview URLs like id-preview--*.lovable.app require a Lovable login).
     const host = window.location.host;
     const isPreview = /lovableproject\.com$/.test(host) || /^id-preview--/.test(host);
-    const publicOrigin = isPreview
-      ? "https://henosismeet.lovable.app"
-      : window.location.origin;
-    const shareUrl = `${publicOrigin}/meeting/${roomId}`;
-    await navigator.clipboard.writeText(shareUrl);
-    toast.success("Public meeting link copied — anyone can join, no sign-in needed");
+    const publicOrigin = isPreview ? "https://henosismeet.lovable.app" : window.location.origin;
+    await navigator.clipboard.writeText(`${publicOrigin}/meeting/${roomId}`);
+    toast.success("Meeting link copied — anyone can join, no sign-in needed");
   };
 
   const copyNotes = async () => {
@@ -346,6 +386,12 @@ function MeetingRoom() {
     await navigator.clipboard.writeText(notes);
     toast.success("Notes copied to clipboard");
   };
+
+  // Combined interim display for moderator
+  const interimDisplay = Object.entries(interimMap)
+    .filter(([, t]) => t.trim())
+    .map(([speaker, t]) => `${speaker}: ${t}`)
+    .join("\n");
 
   // ---- Pre-join screen ----
   if (!joined) {
@@ -390,11 +436,7 @@ function MeetingRoom() {
                 <><Video className="h-5 w-5" /> Join meeting</>
               )}
             </Button>
-            <Button
-              variant="outline"
-              className="h-11 w-full gap-2"
-              onClick={copyLink}
-            >
+            <Button variant="outline" className="h-11 w-full gap-2" onClick={copyLink}>
               <Copy className="h-4 w-4" /> Copy invite link
             </Button>
           </div>
@@ -420,14 +462,8 @@ function MeetingRoom() {
     <div className="flex h-screen flex-col bg-background">
       <header className="flex items-center justify-between border-b border-border bg-card px-4 py-3">
         <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate({ to: "/" })}
-            className="gap-1"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Leave
+          <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/" })} className="gap-1">
+            <ArrowLeft className="h-4 w-4" /> Leave
           </Button>
           <div className="hidden items-center gap-2 sm:flex">
             <div
@@ -440,6 +476,12 @@ function MeetingRoom() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {globalListening && (
+            <span className="flex items-center gap-1.5 rounded-full bg-destructive/10 px-3 py-1 text-xs font-medium text-destructive">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-destructive" />
+              Recording
+            </span>
+          )}
           <Button variant="outline" size="sm" onClick={copyLink} className="gap-2">
             <Copy className="h-4 w-4" /> Share link
           </Button>
@@ -463,11 +505,7 @@ function MeetingRoom() {
               <div className="max-w-sm">
                 <p className="font-semibold">Couldn't load the video call</p>
                 <p className="mt-2 text-sm text-white/70">{loadError}</p>
-                <Button
-                  className="mt-4"
-                  variant="outline"
-                  onClick={() => window.location.reload()}
-                >
+                <Button className="mt-4" variant="outline" onClick={() => window.location.reload()}>
                   Try again
                 </Button>
               </div>
@@ -475,113 +513,141 @@ function MeetingRoom() {
           )}
         </div>
 
-        {/* Sidebar */}
+        {/* Sidebar — full note taker for moderator, status badge for guests */}
         <aside className="flex min-h-0 flex-col gap-3">
-          <div className="rounded-2xl border border-border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h2 className="font-display text-base font-semibold">AI Note-Taker</h2>
-                <p className="text-xs text-muted-foreground">
-                  {supported
-                    ? listening
-                      ? "Listening to your microphone…"
-                      : "Idle — start to capture"
-                    : "Speech recognition not supported in this browser. Try Chrome or Edge."}
-                </p>
+          {isModerator ? (
+            <>
+              {/* Moderator: full AI Note-Taker */}
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="font-display text-base font-semibold">AI Note-Taker</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {supported
+                        ? globalListening
+                          ? "Transcribing all participants…"
+                          : "Idle — start to capture everyone"
+                        : "Speech recognition not supported. Try Chrome or Edge."}
+                    </p>
+                  </div>
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${globalListening ? "animate-pulse bg-destructive" : "bg-muted-foreground/30"}`}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={toggleTranscription}
+                    disabled={!supported}
+                    variant={globalListening ? "destructive" : "default"}
+                    className="flex-1 gap-2"
+                    style={globalListening ? undefined : { background: "var(--gradient-hero)" }}
+                  >
+                    {globalListening ? (
+                      <><MicOff className="h-4 w-4" /> Stop</>
+                    ) : (
+                      <><Mic className="h-4 w-4" /> Start</>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={generate}
+                    disabled={generating || !transcript.trim()}
+                    variant="outline"
+                    className="flex-1 gap-2"
+                  >
+                    {generating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4 text-accent" />
+                    )}
+                    Notes
+                  </Button>
+                </div>
               </div>
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${listening ? "animate-pulse bg-destructive" : "bg-muted-foreground/30"}`}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={toggleListen}
-                disabled={!supported}
-                variant={listening ? "destructive" : "default"}
-                className="flex-1 gap-2"
-                style={listening ? undefined : { background: "var(--gradient-hero)" }}
-              >
-                {listening ? (
-                  <>
-                    <MicOff className="h-4 w-4" /> Stop
-                  </>
-                ) : (
-                  <>
-                    <Mic className="h-4 w-4" /> Start
-                  </>
-                )}
-              </Button>
-              <Button
-                onClick={generate}
-                disabled={generating || !transcript.trim()}
-                variant="outline"
-                className="flex-1 gap-2"
-              >
-                {generating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4 text-accent" />
-                )}
-                Notes
-              </Button>
-            </div>
-          </div>
 
-          <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-card">
-            <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-              <h3 className="flex items-center gap-2 text-sm font-semibold">
-                <FileText className="h-4 w-4 text-primary" />
-                {notes ? "Meeting Notes" : "Live Transcript"}
-              </h3>
-              {notes && (
-                <Button variant="ghost" size="sm" onClick={copyNotes} className="h-7 gap-1 text-xs">
-                  <Copy className="h-3 w-3" /> Copy
-                </Button>
-              )}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-sm leading-relaxed">
-              {notes ? (
-                <Notes markdown={notes} />
-              ) : transcript || interim ? (
-                <p className="whitespace-pre-wrap text-foreground/90">
-                  {transcript}
-                  <span className="text-muted-foreground">{interim}</span>
-                </p>
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
-                  <Mic className="mb-3 h-8 w-8 opacity-40" />
-                  <p className="text-sm">
-                    Click <span className="font-medium text-foreground">Start</span> to capture
-                    audio from this device.
+              <div className="flex min-h-0 flex-1 flex-col rounded-2xl border border-border bg-card">
+                <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold">
+                    <FileText className="h-4 w-4 text-primary" />
+                    {notes ? "Meeting Notes" : "Live Transcript"}
+                  </h3>
+                  {notes && (
+                    <Button variant="ghost" size="sm" onClick={copyNotes} className="h-7 gap-1 text-xs">
+                      <Copy className="h-3 w-3" /> Copy
+                    </Button>
+                  )}
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 text-sm leading-relaxed">
+                  {notes ? (
+                    <Notes markdown={notes} />
+                  ) : transcript || interimDisplay ? (
+                    <p className="whitespace-pre-wrap text-foreground/90">
+                      {transcript}
+                      <span className="text-muted-foreground">{interimDisplay}</span>
+                    </p>
+                  ) : (
+                    <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground">
+                      <Mic className="mb-3 h-8 w-8 opacity-40" />
+                      <p className="text-sm">
+                        Click <span className="font-medium text-foreground">Start</span> to begin
+                        transcribing all participants.
+                      </p>
+                      <p className="mt-2 text-xs">
+                        Everyone's mic is captured. Hit{" "}
+                        <span className="font-medium text-foreground">Notes</span> when done.
+                      </p>
+                    </div>
+                  )}
+                </div>
+                {notes && (
+                  <div className="border-t border-border p-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-xs"
+                      onClick={() => setNotes(null)}
+                    >
+                      Back to transcript
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            /* Guest: just a status card */
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                    globalListening ? "bg-destructive/10" : "bg-muted"
+                  }`}
+                >
+                  {globalListening ? (
+                    <Mic className="h-4 w-4 text-destructive" />
+                  ) : (
+                    <MicOff className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">
+                    {globalListening ? "Recording in progress" : "Recording off"}
                   </p>
-                  <p className="mt-2 text-xs">
-                    When you're done, hit <span className="font-medium text-foreground">Notes</span>{" "}
-                    to generate a structured summary.
+                  <p className="text-xs text-muted-foreground">
+                    {globalListening
+                      ? "Your mic is being transcribed by the host's AI note-taker."
+                      : "The host will start recording when needed."}
                   </p>
                 </div>
-              )}
-            </div>
-            {notes && (
-              <div className="border-t border-border p-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full text-xs"
-                  onClick={() => setNotes(null)}
-                >
-                  Back to transcript
-                </Button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </aside>
       </div>
     </div>
   );
 }
 
-function Notes({ markdown }: { markdown: string }) {
-  const lines = markdown.split("\n");
+const Notes = React.memo(({ markdown }: { markdown: string }) => {
+  const lines = React.useMemo(() => markdown.split("\n"), [markdown]);
   return (
     <div className="space-y-2">
       {lines.map((line, i) => {
@@ -612,12 +678,8 @@ function Notes({ markdown }: { markdown: string }) {
             </div>
           );
         if (line.trim() === "") return <div key={i} className="h-1" />;
-        return (
-          <p key={i} className="text-foreground/90">
-            {line}
-          </p>
-        );
+        return <p key={i} className="text-foreground/90">{line}</p>;
       })}
     </div>
   );
-}
+});

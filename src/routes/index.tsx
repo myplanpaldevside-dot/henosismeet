@@ -24,11 +24,12 @@ export const Route = createFileRoute("/")({
 });
 
 function slugify(s: string) {
-  return s
+  const slug = s
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "")
     .slice(0, 60);
+  return slug || null;
 }
 
 function randomRoom() {
@@ -79,7 +80,8 @@ function Landing() {
   const startMeeting = useServerFn(createMeeting);
 
   const start = async () => {
-    const room = roomInput.trim() ? slugify(roomInput) : randomRoom();
+    const slugified = roomInput.trim() ? slugify(roomInput) : null;
+    const room = slugified || randomRoom();
     setStarting(true);
     try {
       const { creatorToken } = await startMeeting({ data: { roomId: room } });
@@ -94,11 +96,13 @@ function Landing() {
 
   const join = () => {
     if (!roomInput.trim()) return;
-    navigate({ to: "/meeting/$roomId", params: { roomId: slugify(roomInput) } });
+    const room = slugify(roomInput);
+    if (!room) return;
+    navigate({ to: "/meeting/$roomId", params: { roomId: room } });
   };
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--gradient-soft)" }}>
+    <div className="min-h-screen selection:bg-primary/10" style={{ background: "var(--gradient-soft)" }}>
       {/* Header */}
       <header className="container mx-auto flex items-center justify-between px-6 py-6">
         <div className="flex items-center gap-2">
@@ -110,20 +114,23 @@ function Landing() {
           </div>
           <span className="font-display text-lg font-semibold tracking-tight">Henosis Meet</span>
         </div>
-        <span className="hidden text-sm text-muted-foreground sm:block">
-          For the Henosis NGO community
-        </span>
+        <div className="hidden items-center gap-4 sm:flex">
+          <span className="text-sm text-muted-foreground">
+            For the Henosis NGO community
+          </span>
+          <div className="h-4 w-px bg-border" />
+          <Button variant="ghost" size="sm" className="text-xs font-medium">Documentation</Button>
+        </div>
       </header>
 
       {/* Hero */}
       <section className="container mx-auto px-6 pb-16 pt-10 sm:pt-20">
         <div className="mx-auto max-w-3xl text-center">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/5 px-4 py-1.5 text-xs font-medium text-accent shadow-sm backdrop-blur-sm">
             <Sparkles className="h-3.5 w-3.5 text-accent" />
             Live AI transcription · Smart meeting notes
           </div>
-          <h1 className="text-balance text-5xl font-bold leading-tight tracking-tight sm:text-6xl">
-            Meet, talk,{" "}
+          <h1 className="text-balance text-5xl font-extrabold leading-[1.1] tracking-tight sm:text-7xl">
             <span
               className="bg-clip-text text-transparent"
               style={{ backgroundImage: "var(--gradient-hero)" }}
@@ -131,13 +138,13 @@ function Landing() {
               and never lose a moment.
             </span>
           </h1>
-          <p className="mt-6 text-balance text-lg text-muted-foreground">
+          <p className="mx-auto mt-8 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
             Secure video meetings for the Henosis NGO. We transcribe in real time and turn every
             conversation into clear, structured notes — so your team can focus on the mission.
           </p>
 
           {/* CTA */}
-          <div className="mx-auto mt-10 max-w-xl rounded-2xl border border-border bg-card p-3 shadow-[var(--shadow-elevated)]">
+          <div className="group mx-auto mt-12 max-w-xl rounded-2xl border border-border bg-card/50 p-3 shadow-[var(--shadow-elevated)] transition-all duration-300 focus-within:border-primary/30 focus-within:ring-4 focus-within:ring-primary/5 backdrop-blur-xl">
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 value={roomInput}
@@ -149,14 +156,14 @@ function Landing() {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  className="h-12 flex-1 sm:flex-none"
+                  className="h-12 flex-1 border-border/50 bg-background/50 sm:flex-none"
                   onClick={join}
                   disabled={!roomInput.trim()}
                 >
                   Join
                 </Button>
                 <Button
-                  className="h-12 flex-1 gap-2 px-6 sm:flex-none"
+                  className="h-12 flex-1 gap-2 px-6 shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] sm:flex-none"
                   style={{ background: "var(--gradient-hero)" }}
                   onClick={start}
                   disabled={starting}
@@ -171,27 +178,33 @@ function Landing() {
             </div>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            No sign-up needed · Share the link · Up to 50 participants
+            No sign-up needed <span className="mx-2 opacity-30">•</span> Share the link <span className="mx-2 opacity-30">•</span> Up to 50 participants
           </p>
 
           {activeRooms.length > 0 && (
-            <div className="mx-auto mt-6 max-w-xl">
-              <p className="mb-3 text-sm font-medium text-muted-foreground">
-                Meetings in progress
-              </p>
-              <div className="space-y-2">
+            <div className="mx-auto mt-12 max-w-xl">
+              <div className="mb-4 flex items-center justify-between px-1">
+                <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground/80">
+                  Live Meetings
+                </p>
+                <span className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
+                  </span>
+                  {activeRooms.length} active
+                </span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-1">
                 {activeRooms.map(({ roomId, count }) => (
                   <div
                     key={roomId}
-                    className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 shadow-sm"
+                    className="flex items-center justify-between rounded-xl border border-border bg-card/40 p-4 shadow-sm transition-colors hover:bg-card/60"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
                       <div className="text-left">
-                        <p className="text-sm font-medium">{roomId}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {count} participant{count !== 1 ? "s" : ""}
-                        </p>
+                        <p className="text-sm font-bold tracking-tight">{roomId}</p>
+                        <p className="text-xs text-muted-foreground font-medium">{count} participant{count !== 1 ? "s" : ""} joined</p>
                       </div>
                     </div>
                     <Button
@@ -232,12 +245,12 @@ function Landing() {
         ].map((f) => (
           <div
             key={f.title}
-            className="rounded-2xl border border-border bg-card p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+            className="group rounded-2xl border border-border bg-card/50 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-xl hover:shadow-primary/5 backdrop-blur-sm"
           >
-            <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-secondary text-primary">
+            <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
               <f.icon className="h-5 w-5" />
             </div>
-            <h3 className="text-lg font-semibold">{f.title}</h3>
+            <h3 className="text-xl font-bold tracking-tight">{f.title}</h3>
             <p className="mt-2 text-sm text-muted-foreground">{f.body}</p>
           </div>
         ))}

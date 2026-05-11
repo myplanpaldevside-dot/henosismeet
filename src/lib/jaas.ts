@@ -10,6 +10,7 @@ function b64url(str: string): string {
 /** HMAC-SHA256 of roomId using the JaaS private key as the secret.
  *  Only the server can produce this value, so clients can't forge moderator status. */
 async function computeCreatorToken(roomId: string, secret: string): Promise<string> {
+  if (!secret) return "anonymous";
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret.slice(0, 64)),
