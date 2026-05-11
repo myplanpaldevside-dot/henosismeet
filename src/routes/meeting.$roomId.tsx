@@ -195,6 +195,12 @@ function MeetingRoom() {
             startWithAudioMuted: false,
             startWithVideoMuted: false,
             disableInviteFunctions: false,
+            // Disable lobby so unauthenticated users can join directly without
+            // waiting for a moderator (meet.jit.si enforces a lobby by default
+            // when no JWT moderator is present, which blocks all participants).
+            lobby: { enabled: false, autoKnock: false },
+            enableLobbyChat: false,
+            requireDisplayName: false,
           },
           interfaceConfigOverwrite: {
             MOBILE_APP_PROMO: false,
@@ -208,6 +214,12 @@ function MeetingRoom() {
         setLoadingCall(false);
         api.addListener("videoConferenceJoined", () => setLoadingCall(false));
         api.addListener("readyToClose", () => navigate({ to: "/" }));
+        // Auto-admit any participant stuck in the lobby (fallback in case the
+        // server-side lobby is still active despite the config override above).
+        api.addListener("knockingParticipant", (...args: unknown[]) => {
+          const e = args[0] as { participant: { id: string } };
+          api.executeCommand("answerKnockingParticipant", e.participant.id, true);
+        });
       })
       .catch((err: Error) => {
         console.error(err);
