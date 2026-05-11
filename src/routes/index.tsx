@@ -1,9 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { Video, Sparkles, Users, FileText, ArrowRight } from "lucide-react";
+import { Video, Sparkles, Users, FileText, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
+import { useServerFn } from "@tanstack/react-start";
+import { createMeeting } from "@/lib/jaas";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -73,8 +75,20 @@ function Landing() {
     };
   }, []);
 
-  const start = () => {
+  const [starting, setStarting] = useState(false);
+  const startMeeting = useServerFn(createMeeting);
+
+  const start = async () => {
     const room = roomInput.trim() ? slugify(roomInput) : randomRoom();
+    setStarting(true);
+    try {
+      const { creatorToken } = await startMeeting({ data: { roomId: room } });
+      localStorage.setItem(`henosis_creator_${room}`, creatorToken);
+    } catch {
+      // If token generation fails, still navigate — user joins as guest
+    } finally {
+      setStarting(false);
+    }
     navigate({ to: "/meeting/$roomId", params: { roomId: room } });
   };
 
@@ -145,9 +159,13 @@ function Landing() {
                   className="h-12 flex-1 gap-2 px-6 sm:flex-none"
                   style={{ background: "var(--gradient-hero)" }}
                   onClick={start}
+                  disabled={starting}
                 >
-                  New meeting
-                  <ArrowRight className="h-4 w-4" />
+                  {starting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>New meeting <ArrowRight className="h-4 w-4" /></>
+                  )}
                 </Button>
               </div>
             </div>

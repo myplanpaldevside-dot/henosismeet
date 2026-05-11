@@ -267,7 +267,8 @@ function MeetingRoom() {
     setDisplayName(name);
     setJoiningCall(true);
     try {
-      const res = await getToken({ data: { displayName: name, roomId } });
+      const creatorToken = localStorage.getItem(`henosis_creator_${roomId}`) ?? undefined;
+      const res = await getToken({ data: { displayName: name, roomId, creatorToken } });
       if (res.error || !res.token) {
         toast.error(res.error ?? "Could not connect to meeting service");
         return;
