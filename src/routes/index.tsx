@@ -10,13 +10,13 @@ import { createMeeting } from "@/lib/jaas";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Henosis Meet — Video Meetings with AI Notes" },
+      { title: "Henosis Meet | Video Meetings with AI Notes" },
       {
         name: "description",
         content:
           "Henosis NGO's virtual conferencing platform. Free video meetings powered by Jitsi with live AI transcription and smart meeting notes.",
       },
-      { property: "og:title", content: "Henosis Meet — Video Meetings with AI Notes" },
+      { property: "og:title", content: "Henosis Meet | Video Meetings with AI Notes" },
       { property: "og:description", content: "Free video meetings with live AI transcription for the Henosis NGO." },
     ],
   }),
@@ -102,68 +102,83 @@ function Landing() {
   };
 
   return (
-    <div className="min-h-screen selection:bg-primary/10" style={{ background: "var(--gradient-soft)" }}>
-      {/* Header */}
-      <header className="container mx-auto flex items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-2">
-          <div
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-primary-foreground"
-            style={{ background: "var(--gradient-hero)" }}
-          >
-            <Video className="h-5 w-5" />
+    <div className="min-h-screen bg-background">
+      {/* Fixed nav */}
+      <header
+        className="fixed top-0 z-50 w-full border-b border-white/8 backdrop-blur-xl"
+        style={{ background: "oklch(0.10 0.04 295 / 0.85)" }}
+      >
+        <div className="container mx-auto flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-white"
+              style={{ background: "var(--gradient-hero)" }}
+            >
+              <Video className="h-4 w-4" />
+            </div>
+            <span className="font-display text-base font-semibold tracking-tight text-white">Henosis Meet</span>
           </div>
-          <span className="font-display text-lg font-semibold tracking-tight">Henosis Meet</span>
-        </div>
-        <div className="hidden items-center gap-4 sm:flex">
-          <span className="text-sm text-muted-foreground">
-            For the Henosis NGO community
-          </span>
-          <div className="h-4 w-px bg-border" />
-          <Button variant="ghost" size="sm" className="text-xs font-medium">Documentation</Button>
+          <span className="hidden text-sm text-white/50 sm:block">For the Henosis NGO community</span>
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="container mx-auto px-6 pb-16 pt-10 sm:pt-20">
-        <div className="mx-auto max-w-3xl text-center">
-          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/5 px-4 py-1.5 text-xs font-medium text-accent shadow-sm backdrop-blur-sm">
+      {/* Dark hero */}
+      <section
+        className="relative flex min-h-screen items-center justify-center overflow-hidden pt-20"
+        style={{ background: "var(--gradient-dark-hero)" }}
+      >
+        {/* Subtle radial glow behind headline */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: "radial-gradient(ellipse 80% 50% at 50% 40%, oklch(0.42 0.18 295 / 0.18) 0%, transparent 70%)",
+          }}
+        />
+
+        <div className="container relative mx-auto px-6 pb-24 pt-16 text-center">
+          {/* Badge */}
+          <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-white/70 backdrop-blur-sm">
             <Sparkles className="h-3.5 w-3.5 text-accent" />
             Live AI transcription · Smart meeting notes
           </div>
-          <h1 className="text-balance text-5xl font-extrabold leading-[1.1] tracking-tight sm:text-7xl">
+
+          {/* Headline */}
+          <h1 className="mx-auto max-w-4xl text-balance text-5xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-7xl lg:text-8xl">
+            Meet, talk, and{" "}
             <span
               className="bg-clip-text text-transparent"
               style={{ backgroundImage: "var(--gradient-hero)" }}
             >
-              and never lose a moment.
+              never lose a moment.
             </span>
           </h1>
-          <p className="mx-auto mt-8 max-w-2xl text-balance text-lg leading-relaxed text-muted-foreground">
+
+          <p className="mx-auto mt-7 max-w-xl text-balance text-lg leading-relaxed text-white/55">
             Secure video meetings for the Henosis NGO. We transcribe in real time and turn every
-            conversation into clear, structured notes — so your team can focus on the mission.
+            conversation into clear, structured notes.
           </p>
 
-          {/* CTA */}
-          <div className="group mx-auto mt-12 max-w-xl rounded-2xl border border-border bg-card/50 p-3 shadow-[var(--shadow-elevated)] transition-all duration-300 focus-within:border-primary/30 focus-within:ring-4 focus-within:ring-primary/5 backdrop-blur-xl">
-            <div className="flex flex-col gap-2 sm:flex-row">
+          {/* CTA box */}
+          <div className="mx-auto mt-10 max-w-lg">
+            <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur-sm sm:flex-row">
               <Input
                 value={roomInput}
                 onChange={(e) => setRoomInput(e.target.value)}
-                placeholder="Enter meeting name or leave empty"
-                className="h-12 border-0 bg-transparent text-base shadow-none focus-visible:ring-0"
+                placeholder="Enter a room name, or leave empty"
+                className="h-12 border-0 bg-transparent text-sm text-white shadow-none placeholder:text-white/30 focus-visible:ring-0"
                 onKeyDown={(e) => e.key === "Enter" && start()}
               />
-              <div className="flex gap-2">
+              <div className="flex shrink-0 gap-2">
                 <Button
                   variant="outline"
-                  className="h-12 flex-1 border-border/50 bg-background/50 sm:flex-none"
+                  className="h-12 flex-1 border-white/15 bg-white/8 text-white hover:bg-white/15 sm:flex-none sm:px-5"
                   onClick={join}
                   disabled={!roomInput.trim()}
                 >
                   Join
                 </Button>
                 <Button
-                  className="h-12 flex-1 gap-2 px-6 shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98] sm:flex-none"
+                  className="h-12 flex-1 gap-2 px-6 text-white shadow-lg sm:flex-none"
                   style={{ background: "var(--gradient-hero)" }}
                   onClick={start}
                   disabled={starting}
@@ -176,43 +191,43 @@ function Landing() {
                 </Button>
               </div>
             </div>
+            <p className="mt-3 text-xs text-white/35">
+              No sign-up needed · Share the link · Up to 50 participants
+            </p>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            No sign-up needed <span className="mx-2 opacity-30">•</span> Share the link <span className="mx-2 opacity-30">•</span> Up to 50 participants
-          </p>
 
+          {/* Live meetings */}
           {activeRooms.length > 0 && (
-            <div className="mx-auto mt-12 max-w-xl">
+            <div className="mx-auto mt-14 max-w-lg">
               <div className="mb-4 flex items-center justify-between px-1">
-                <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground/80">
-                  Live Meetings
+                <p className="text-xs font-semibold uppercase tracking-widest text-white/40">
+                  Meetings in progress
                 </p>
-                <span className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-400">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-green-400">
                   <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
                   </span>
                   {activeRooms.length} active
                 </span>
               </div>
-              <div className="grid gap-3 sm:grid-cols-1">
+              <div className="grid gap-2">
                 {activeRooms.map(({ roomId, count }) => (
                   <div
                     key={roomId}
-                    className="flex items-center justify-between rounded-xl border border-border bg-card/40 p-4 shadow-sm transition-colors hover:bg-card/60"
+                    className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="text-left">
-                        <p className="text-sm font-bold tracking-tight">{roomId}</p>
-                        <p className="text-xs text-muted-foreground font-medium">{count} participant{count !== 1 ? "s" : ""} joined</p>
-                      </div>
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-white">{roomId}</p>
+                      <p className="text-xs text-white/45">
+                        {count} participant{count !== 1 ? "s" : ""} joined
+                      </p>
                     </div>
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() =>
-                        navigate({ to: "/meeting/$roomId", params: { roomId } })
-                      }
+                      className="border-white/15 bg-white/8 text-white hover:bg-white/15"
+                      onClick={() => navigate({ to: "/meeting/$roomId", params: { roomId } })}
                     >
                       Join
                     </Button>
@@ -225,12 +240,12 @@ function Landing() {
       </section>
 
       {/* Features */}
-      <section className="container mx-auto grid gap-4 px-6 pb-24 sm:grid-cols-3">
+      <section className="container mx-auto grid gap-4 px-6 py-24 sm:grid-cols-3">
         {[
           {
             icon: Video,
             title: "HD video, instantly",
-            body: "Powered by open-source Jitsi. Click and you're in — no installs, no accounts.",
+            body: "Powered by open-source Jitsi. Click and you're in, no installs, no accounts.",
           },
           {
             icon: Sparkles,
@@ -245,13 +260,14 @@ function Landing() {
         ].map((f) => (
           <div
             key={f.title}
-            className="group rounded-2xl border border-border bg-card/50 p-8 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/20 hover:shadow-xl hover:shadow-primary/5 backdrop-blur-sm"
+            className="group rounded-2xl border border-border bg-card p-8 transition-all duration-300 hover:-translate-y-1 hover:border-primary/25 hover:shadow-[var(--shadow-elevated)]"
+            style={{ boxShadow: "var(--shadow-card)" }}
           >
             <div className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
               <f.icon className="h-5 w-5" />
             </div>
             <h3 className="text-xl font-bold tracking-tight">{f.title}</h3>
-            <p className="mt-2 text-sm text-muted-foreground">{f.body}</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{f.body}</p>
           </div>
         ))}
       </section>

@@ -23,8 +23,8 @@ import React from "react";
 export const Route = createFileRoute("/meeting/$roomId")({
   head: ({ params }) => ({
     meta: [
-      { title: `${params.roomId} — Henosis Meet` },
-      { name: "description", content: "Join the Henosis Meet video call — no sign-up required." },
+      { title: `${params.roomId} | Henosis Meet` },
+      { name: "description", content: "Join the Henosis Meet video call. No sign-up required." },
       { property: "og:title", content: `Join "${params.roomId}" on Henosis Meet` },
       {
         property: "og:description",
@@ -205,7 +205,7 @@ function MeetingRoom() {
         if (action === "start") {
           setGlobalListening(true);
           try { recognitionRef.current?.start(); } catch { /* ignore */ }
-          if (!isModerator) toast.success("Host started recording — your mic is being transcribed");
+          if (!isModerator) toast.success("Host started recording. Your mic is being transcribed.");
         } else {
           setGlobalListening(false);
           try { recognitionRef.current?.stop(); } catch { /* ignore */ }
@@ -350,7 +350,7 @@ function MeetingRoom() {
       setGlobalListening(true);
       try { recognitionRef.current?.start(); } catch { /* ignore */ }
       ch?.send({ type: "broadcast", event: "control", payload: { action: "start" } });
-      toast.success("Recording started — all participants are being transcribed");
+      toast.success("Recording started. All participants are being transcribed.");
     }
   };
 
@@ -378,7 +378,7 @@ function MeetingRoom() {
     const isPreview = /lovableproject\.com$/.test(host) || /^id-preview--/.test(host);
     const publicOrigin = isPreview ? "https://henosismeet.lovable.app" : window.location.origin;
     await navigator.clipboard.writeText(`${publicOrigin}/meeting/${roomId}`);
-    toast.success("Meeting link copied — anyone can join, no sign-in needed");
+    toast.success("Meeting link copied. Anyone can join, no sign-in needed.");
   };
 
   const copyNotes = async () => {
@@ -526,7 +526,7 @@ function MeetingRoom() {
                       {supported
                         ? globalListening
                           ? "Transcribing all participants…"
-                          : "Idle — start to capture everyone"
+                          : "Idle, start to capture everyone"
                         : "Speech recognition not supported. Try Chrome or Edge."}
                     </p>
                   </div>
