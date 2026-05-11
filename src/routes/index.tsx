@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Video, Sparkles, Users, FileText, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -40,6 +41,37 @@ function randomRoom() {
 function Landing() {
   const navigate = useNavigate();
   const [roomInput, setRoomInput] = useState("");
+  const [activeRooms, setActiveRooms] = useState<{ roomId: string; count: number }[]>([]);
+
+  useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase.channel("active-meetings");
+      channel
+        .on("presence", { event: "sync" }, () => {
+          const state = channel!.presenceState<{ roomId: string }>();
+          const counts: Record<string, number> = {};
+          Object.values(state)
+            .flat()
+            .forEach((p) => {
+              if (p.roomId) counts[p.roomId] = (counts[p.roomId] ?? 0) + 1;
+            });
+          setActiveRooms(
+            Object.entries(counts).map(([roomId, count]) => ({ roomId, count })),
+          );
+        })
+        .subscribe();
+    } catch {
+      /* Supabase not available */
+    }
+    return () => {
+      try {
+        if (channel) supabase.removeChannel(channel);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
 
   const start = () => {
     const room = roomInput.trim() ? slugify(roomInput) : randomRoom();
@@ -123,6 +155,41 @@ function Landing() {
           <p className="mt-3 text-xs text-muted-foreground">
             No sign-up needed · Share the link · Up to 50 participants
           </p>
+
+          {activeRooms.length > 0 && (
+            <div className="mx-auto mt-6 max-w-xl">
+              <p className="mb-3 text-sm font-medium text-muted-foreground">
+                Meetings in progress
+              </p>
+              <div className="space-y-2">
+                {activeRooms.map(({ roomId, count }) => (
+                  <div
+                    key={roomId}
+                    className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3 shadow-sm"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+                      <div className="text-left">
+                        <p className="text-sm font-medium">{roomId}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {count} participant{count !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        navigate({ to: "/meeting/$roomId", params: { roomId } })
+                      }
+                    >
+                      Join
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

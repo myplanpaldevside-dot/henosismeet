@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { summarizeMeeting } from "@/lib/ai.functions";
 import { getJaasToken } from "@/lib/jaas";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/meeting/$roomId")({
   head: ({ params }) => ({
@@ -177,6 +178,30 @@ function MeetingRoom() {
   useEffect(() => {
     listeningRef.current = listening;
   }, [listening]);
+
+  // Broadcast presence so the landing page can show this meeting as active
+  useEffect(() => {
+    if (!joined) return;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase.channel("active-meetings");
+      channel.subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel!.track({ roomId });
+        }
+      });
+    } catch {
+      /* Supabase not available — presence is optional */
+    }
+    return () => {
+      try {
+        channel?.untrack();
+        if (channel) supabase.removeChannel(channel);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [joined, roomId]);
 
   // Mount Jitsi after user joins (requires JaaS token)
   useEffect(() => {
