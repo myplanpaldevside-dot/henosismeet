@@ -283,8 +283,16 @@ function MeetingRoom() {
   };
 
   const copyLink = async () => {
-    await navigator.clipboard.writeText(window.location.href);
-    toast.success("Meeting link copied — share it with anyone");
+    // Always share the public published URL, never the editor preview URL
+    // (preview URLs like id-preview--*.lovable.app require a Lovable login).
+    const host = window.location.host;
+    const isPreview = /lovableproject\.com$/.test(host) || /^id-preview--/.test(host);
+    const publicOrigin = isPreview
+      ? "https://henosismeet.lovable.app"
+      : window.location.origin;
+    const shareUrl = `${publicOrigin}/meeting/${roomId}`;
+    await navigator.clipboard.writeText(shareUrl);
+    toast.success("Public meeting link copied — anyone can join, no sign-in needed");
   };
 
   const copyNotes = async () => {
