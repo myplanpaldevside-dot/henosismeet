@@ -204,6 +204,8 @@ function MeetingRoom() {
           },
         });
         apiRef.current = api;
+        // Iframe is mounted — clear our overlay so Jitsi's UI is interactive.
+        setLoadingCall(false);
         api.addListener("videoConferenceJoined", () => setLoadingCall(false));
         api.addListener("readyToClose", () => navigate({ to: "/" }));
       })
