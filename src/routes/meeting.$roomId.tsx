@@ -397,61 +397,69 @@ function MeetingRoom() {
   if (!joined) {
     return (
       <div
-        className="flex min-h-screen items-center justify-center px-4 py-10"
-        style={{ background: "var(--gradient-soft)" }}
+        className="flex min-h-screen flex-col items-center justify-center px-4 py-10"
+        style={{ background: "var(--gradient-dark-hero)" }}
       >
-        <div className="w-full max-w-md rounded-3xl border border-border bg-card p-8 shadow-[var(--shadow-elevated)]">
-          <div
-            className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-2xl text-primary-foreground"
-            style={{ background: "var(--gradient-hero)" }}
-          >
-            <Video className="h-6 w-6" />
+        {/* Nav */}
+        <div className="fixed top-0 w-full border-b border-white/[0.06]" style={{ background: "oklch(0.08 0.04 295 / 0.85)", backdropFilter: "blur(20px)" }}>
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: "var(--gradient-hero)" }}>
+                <Video className="h-4 w-4 text-white" />
+              </div>
+              <span className="font-display text-[15px] font-semibold tracking-tight text-white">Henosis Meet</span>
+            </div>
+            <button onClick={() => navigate({ to: "/" })} className="text-xs text-white/35 transition-colors hover:text-white/70">
+              ← Back
+            </button>
           </div>
-          <h1 className="text-center font-display text-2xl font-bold tracking-tight">
-            Join the meeting
-          </h1>
-          <p className="mt-2 text-center text-sm text-muted-foreground">
-            Room <span className="font-medium text-foreground">{roomId}</span>
-          </p>
+        </div>
 
-          <div className="mt-6 space-y-3">
-            <label className="text-sm font-medium">Your name</label>
-            <Input
+        {/* Card */}
+        <div className="ui-fade-up w-full max-w-sm pt-8">
+          <p className="mb-8 text-center text-[11px] font-semibold tracking-[0.22em] text-white/30">
+            JOINING ROOM
+          </p>
+          <h1
+            className="mb-1 text-center font-display font-bold text-white"
+            style={{ fontSize: "clamp(1.6rem, 4vw, 2.25rem)", letterSpacing: "-0.03em" }}
+          >
+            {roomId}
+          </h1>
+          <p className="mb-10 text-center text-sm text-white/35">Enter your name to join</p>
+
+          <div className="space-y-3">
+            <input
               autoFocus
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="e.g. Amina from Henosis"
-              className="h-12"
+              placeholder="Your name"
+              className="h-[52px] w-full rounded-xl border border-white/10 bg-white/[0.05] px-4 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/20 focus:bg-white/[0.08]"
               onKeyDown={(e) => e.key === "Enter" && enterMeeting()}
             />
-            <Button
-              className="h-12 w-full gap-2 text-base font-semibold"
+            <button
+              className="flex h-[52px] w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
               style={{ background: "var(--gradient-hero)" }}
               onClick={enterMeeting}
               disabled={joiningCall}
             >
               {joiningCall ? (
-                <><Loader2 className="h-5 w-5 animate-spin" /> Connecting…</>
+                <><Loader2 className="h-4 w-4 animate-spin" /> Connecting</>
               ) : (
-                <><Video className="h-5 w-5" /> Join meeting</>
+                <><Video className="h-4 w-4" /> Join meeting</>
               )}
-            </Button>
-            <Button variant="outline" className="h-11 w-full gap-2" onClick={copyLink}>
+            </button>
+            <button
+              onClick={copyLink}
+              className="flex h-[46px] w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] text-sm text-white/60 transition-colors hover:bg-white/[0.08] hover:text-white/90"
+            >
               <Copy className="h-4 w-4" /> Copy invite link
-            </Button>
+            </button>
           </div>
 
-          <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-            <Users className="h-3.5 w-3.5" />
+          <p className="mt-8 text-center text-xs text-white/20">
             No sign-up needed. Anyone with the link can join.
-          </div>
-
-          <button
-            onClick={() => navigate({ to: "/" })}
-            className="mt-6 block w-full text-center text-xs text-muted-foreground hover:text-foreground"
-          >
-            ← Back to home
-          </button>
+          </p>
         </div>
       </div>
     );
